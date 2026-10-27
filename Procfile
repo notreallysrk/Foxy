@@ -1,1 +1,1 @@
-worker: uv run python -m wbb
+worker: python -m wbb
