@@ -21,7 +21,6 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 import asyncio
 import logging
 import os
-import time
 from collections import OrderedDict
 
 from aiohttp import ClientSession, ClientTimeout
@@ -110,7 +109,7 @@ IMPORTANT CONVERSATION RULES:
 _HISTORY = OrderedDict()
 _HISTORY_LIMIT = 500
 _MAX_HISTORY_MESSAGES = 6
-_MAX_OUTPUT_TOKENS = 96
+_MAX_OUTPUT_TOKENS = 120
 
 # Reuse the HTTP connection between messages to avoid a new TLS handshake
 # for every Gemini request.
@@ -165,20 +164,12 @@ async def gemini_reply(message: Message):
             timeout = ClientTimeout(total=45, connect=10, sock_read=35)
             _GEMINI_SESSION = ClientSession(timeout=timeout)
 
-        request_started = time.perf_counter()
         async with _GEMINI_SESSION.post(
             GEMINI_API_URL,
             params={"key": GEMINI_API_KEY},
             json=payload,
         ) as response:
             data = await response.json(content_type=None)
-            elapsed = time.perf_counter() - request_started
-            LOGGER.info(
-                "Gemini API response completed in %.2f seconds (HTTP %s, model=%s).",
-                elapsed,
-                response.status,
-                GEMINI_MODEL,
-            )
 
             if response.status != 200:
                 # Do not log the API key or request URL.
