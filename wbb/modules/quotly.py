@@ -1,17 +1,18 @@
 import io
 import re
 import logging
+
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pyrogram import filters
 from pyrogram.types import Message
 
-from wbb import USERBOT_PREFIX, app, app2, SUDOERS
-from wbb.utils.errors import capture_err
+from wbb import USERBOT_PREFIX, app, app2
 
 LOGGER = logging.getLogger(__name__)
 
 WIDTH = 800
 HEIGHT = 450
+
 BACKGROUND = (28, 30, 38)
 TEXT_COLOR = (245, 245, 245)
 ACCENT_COLOR = (255, 105, 180)
@@ -21,21 +22,26 @@ def get_font(size: int):
     """Load a font with a safe fallback."""
     try:
         return ImageFont.truetype("DejaVuSans.ttf", size)
-    except OSError:
+    except (OSError, IOError):
         return ImageFont.load_default()
 
 
 def get_message_text(message: Message) -> str:
-    """Extract text from a message or its replied message."""
-    if message.reply_to_message:
-        replied = message.reply_to_message
-        return replied.text or replied.caption or "[Media message]"
+    """Extract text from the replied message or command arguments."""
+    replied = message.reply_to_message
+
+    if replied:
+        return (
+            replied.text
+            or replied.caption
+            or "[Media message]"
+        )
 
     text = message.text or message.caption or ""
     parts = text.split(maxsplit=1)
 
     if len(parts) > 1:
-        return parts[1]
+        return parts[1].strip()
 
     return "Please reply to a message or provide text."
 
@@ -47,7 +53,12 @@ def get_display_name(message: Message) -> str:
     if not user:
         return "Anonymous"
 
-    return user.first_name or user.username or "Anonymous"
+    name = user.first_name or user.username or "Anonymous"
+
+    if user.last_name:
+        name = f"{name} {user.last_name}"
+
+    return name
 
 
 def wrap_text(draw, text: str, font, max_width: int):
@@ -63,15 +74,52 @@ def wrap_text(draw, text: str, font, max_width: int):
             continue
 
         for word in words:
-            test_line = f"{current_line} {word}".strip()
-            box = draw.textbbox((0, 0), test_line, font=font)
+            # Split extremely long words to avoid overflow.
+            remaining = word
 
-            if box[2] - box[0] <= max_width:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
+            while remaining:
+                test_line = (
+                    f"{current_line} {remaining}".strip()
+                )
+
+                box = draw.textbbox(
+                    (0, 0),
+                    test_line,
+                    font=font,
+                )
+
+                if box[2] - box[0] <= max_width:
+                    current_line = test_line
+                    remaining = ""
+                else:
+                    if current_line:
+                        lines.append(current_line)
+                        current_line = ""
+
+                    # If the word itself is too wide, split it.
+                    if not remaining:
+                        break
+
+                    chunk = ""
+
+                    for char in remaining:
+                        candidate = chunk + char
+                        box = draw.textbbox(
+                            (0, 0),
+                            candidate,
+                            font=font,
+                        )
+
+                        if box[2] - box[0] <= max_width:
+                            chunk = candidate
+                        else:
+                            break
+
+                    if not chunk:
+                        chunk = remaining[0]
+
+                    lines.append(chunk)
+                    remaining = remaining[len(chunk):]
 
         if current_line:
             lines.append(current_line)
@@ -81,14 +129,17 @@ def wrap_text(draw, text: str, font, max_width: int):
 
 def create_quote_image(text: str, name: str) -> io.BytesIO:
     """Create a quote card locally using Pillow."""
-    image = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
+    image = Image.new(
+        "RGB",
+        (WIDTH, HEIGHT),
+        BACKGROUND,
+    )
     draw = ImageDraw.Draw(image)
 
     title_font = get_font(23)
     quote_font = get_font(29)
     footer_font = get_font(18)
 
-    # Decorative accent
     draw.rounded_rectangle(
         (35, 35, WIDTH - 35, HEIGHT - 35),
         radius=24,
@@ -97,19 +148,20 @@ def create_quote_image(text: str, name: str) -> io.BytesIO:
     )
 
     draw.text(
-        (60, 55),
+        (60, 45),
         "❝",
         font=get_font(64),
         fill=ACCENT_COLOR,
     )
 
     draw.text(
-        (60, 125),
+        (60, 120),
         name[:45],
         font=title_font,
         fill=ACCENT_COLOR,
     )
 
+    text = (text or "[Empty message]").strip()
     lines = wrap_text(
         draw,
         text[:1500],
@@ -117,12 +169,35 @@ def create_quote_image(text: str, name: str) -> io.BytesIO:
         WIDTH - 140,
     )
 
-    line_height = 42
-    available_height = 210
-    max_lines = max(1, available_height // line_height)
-    lines = lines[:max_lines]
+    line_height = 36
+    available_height = 190
+    max_lines = max(
+        1,
+        available_height // line_height,
+    )
 
-    y = 175
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+
+        # Mark the final visible line as truncated.
+        if lines:
+            last = lines[-1]
+
+            while last:
+                box = draw.textbbox(
+                    (0, 0),
+                    last + "...",
+                    font=quote_font,
+                )
+
+                if box[2] - box[0] <= WIDTH - 140:
+                    break
+
+                last = last[:-1]
+
+            lines[-1] = last + "..."
+
+    y = 170
 
     for line in lines:
         draw.text(
@@ -151,9 +226,17 @@ def create_quote_image(text: str, name: str) -> io.BytesIO:
 async def send_quote(message: Message):
     """Generate and send a quote image."""
     text = get_message_text(message)
-    name = get_display_name(
-        message.reply_to_message or message
-    )
+
+    if not text or text.startswith(
+        "Please reply to a message"
+    ):
+        await message.reply_text(
+            "Reply to a message or provide text to create a quote."
+        )
+        return
+
+    source = message.reply_to_message or message
+    name = get_display_name(source)
 
     output = create_quote_image(text, name)
 
@@ -163,38 +246,51 @@ async def send_quote(message: Message):
     )
 
 
-@app.on_message(
-    filters.command(["q", "quote"])
-    & filters.group
-)
-@capture_err
-async def quote_command(_, message: Message):
-    """Bot quote command."""
-    await send_quote(message)
-
-
-@app.on_message(
-    filters.command(["qpic"])
-)
-@capture_err
-async def qpic_command(_, message: Message):
-    """Create a quote picture, grayscale image, or WebP sticker."""
+async def process_qpic(message: Message):
+    """Create a quote image, grayscale image, or WebP sticker."""
     text = get_message_text(message)
-    name = get_display_name(
-        message.reply_to_message or message
+
+    if not text or text.startswith(
+        "Please reply to a message"
+    ):
+        await message.reply_text(
+            "Reply to a message or provide text.\n\n"
+            "Options:\n"
+            "-b : Black and white\n"
+            "-s : WebP sticker"
+        )
+        return
+
+    source = message.reply_to_message or message
+    name = get_display_name(source)
+
+    command_text = message.text or message.caption or ""
+
+    grayscale = bool(
+        re.search(r"(?:^|\s)-b(?:\s|$)", command_text)
+    )
+    sticker = bool(
+        re.search(r"(?:^|\s)-s(?:\s|$)", command_text)
     )
 
-    command_text = message.text or ""
-    grayscale = bool(re.search(r"(?:^|\s)-b(?:\s|$)", command_text))
-    sticker = bool(re.search(r"(?:^|\s)-s(?:\s|$)", command_text))
-
-    # Remove command flags from text when no message is replied to.
+    # Remove options from the text when no message is replied to.
     if not message.reply_to_message:
-        text = re.sub(r"(?:^|\s)-[bs](?=\s|$)", " ", text).strip()
+        text = re.sub(
+            r"(?:^|\s)-[bs](?=\s|$)",
+            " ",
+            text,
+        ).strip()
+
+    if not text:
+        await message.reply_text(
+            "Please provide some text for the quote."
+        )
+        return
 
     output = create_quote_image(text, name)
 
-    image = Image.open(output).convert("RGB")
+    with Image.open(output) as source_image:
+        image = source_image.convert("RGB")
 
     if grayscale:
         image = ImageOps.grayscale(image).convert("RGB")
@@ -202,21 +298,62 @@ async def qpic_command(_, message: Message):
     result = io.BytesIO()
 
     if sticker:
-        image.save(result, format="WEBP", quality=90)
+        # Telegram stickers should fit within 512x512.
+        image.thumbnail((512, 512))
+        image.save(
+            result,
+            format="WEBP",
+            quality=90,
+        )
         result.name = "quote.webp"
         result.seek(0)
-        await message.reply_sticker(sticker=result)
+
+        await message.reply_sticker(
+            sticker=result,
+        )
     else:
-        image.save(result, format="PNG")
+        image.save(
+            result,
+            format="PNG",
+        )
         result.name = "quote.png"
         result.seek(0)
+
         await message.reply_document(
             document=result,
             caption="Here is your quote.",
         )
 
 
-# Userbot quote commands
+@app.on_message(
+    filters.command(["q", "quote"])
+    & filters.group
+)
+async def quote_command(_, message: Message):
+    """Bot quote command."""
+    try:
+        await send_quote(message)
+    except Exception:
+        LOGGER.exception("Bot quote command failed")
+        await message.reply_text(
+            "Failed to create the quote. Please try again."
+        )
+
+
+@app.on_message(
+    filters.command(["qpic"])
+)
+async def qpic_command(_, message: Message):
+    """Bot quote picture command."""
+    try:
+        await process_qpic(message)
+    except Exception:
+        LOGGER.exception("Bot qpic command failed")
+        await message.reply_text(
+            "Failed to create the quote picture. Please try again."
+        )
+
+
 @app2.on_message(
     filters.command(
         ["q", "rq", "fq", "frq", "qbot"],
@@ -224,10 +361,15 @@ async def qpic_command(_, message: Message):
     )
     & filters.me
 )
-@capture_err
 async def userbot_quote_command(_, message: Message):
     """Userbot quote commands."""
-    await send_quote(message)
+    try:
+        await send_quote(message)
+    except Exception:
+        LOGGER.exception("Userbot quote command failed")
+        await message.reply_text(
+            "Failed to create the quote. Please try again."
+        )
 
 
 @app2.on_message(
@@ -237,7 +379,12 @@ async def userbot_quote_command(_, message: Message):
     )
     & filters.me
 )
-@capture_err
 async def userbot_qpic_command(_, message: Message):
     """Userbot quote picture command."""
-    await qpic_command(_, message)
+    try:
+        await process_qpic(message)
+    except Exception:
+        LOGGER.exception("Userbot qpic command failed")
+        await message.reply_text(
+            "Failed to create the quote picture. Please try again."
+        )
