@@ -33,6 +33,7 @@ from uvloop import install
 
 from wbb import (
     BOT_NAME,
+    BOT_TOKEN,
     BOT_USERNAME,
     LOG_GROUP_ID,
     USERBOT_NAME,
@@ -41,6 +42,7 @@ from wbb import (
     log,
 )
 from wbb.core.keyboard import ikb
+from wbb.utils.colored_buttons import colorize_message
 from wbb.modules import ALL_MODULES
 from wbb.modules.sudoers import bot_sys_stats
 from wbb.utils import paginate_modules
@@ -251,15 +253,11 @@ async def start(_, message):
             )
         elif name == "help":
             text, keyb = await help_parser(message.from_user.first_name)
-            await message.reply(
-                text,
-                reply_markup=keyb,
-            )
+            sent = await message.reply(text, reply_markup=keyb)
+            await colorize_message(sent, keyb, BOT_TOKEN, "help")
     else:
-        await message.reply(
-            home_text_pm,
-            reply_markup=home_keyboard_pm,
-        )
+        sent = await message.reply(home_text_pm, reply_markup=home_keyboard_pm)
+        await colorize_message(sent, home_keyboard_pm, BOT_TOKEN, "start")
     return
 
 
@@ -304,18 +302,14 @@ async def help_command(_, message):
                 text, help_keyboard = await help_parser(
                     message.from_user.first_name
                 )
-                await message.reply(
-                    text,
-                    reply_markup=help_keyboard,
-                    disable_web_page_preview=True,
-                )
+                sent = await message.reply(text, reply_markup=help_keyboard, disable_web_page_preview=True)
+                await colorize_message(sent, help_keyboard, BOT_TOKEN, "help")
         else:
             text, help_keyboard = await help_parser(
                 message.from_user.first_name
             )
-            await message.reply(
-                text, reply_markup=help_keyboard, disable_web_page_preview=True
-            )
+            sent = await message.reply(text, reply_markup=help_keyboard, disable_web_page_preview=True)
+            await colorize_message(sent, help_keyboard, BOT_TOKEN, "help")
     return
 
 
@@ -393,40 +387,25 @@ General command are:
             disable_web_page_preview=True,
         )
     elif home_match:
-        await app.send_message(
-            query.from_user.id,
-            text=home_text_pm,
-            reply_markup=home_keyboard_pm,
-        )
+        sent = await app.send_message(query.from_user.id, text=home_text_pm, reply_markup=home_keyboard_pm)
+        await colorize_message(sent, home_keyboard_pm, BOT_TOKEN, "start")
         await query.message.delete()
     elif prev_match:
         curr_page = int(prev_match.group(1))
-        await query.message.edit(
-            text=top_text,
-            reply_markup=InlineKeyboardMarkup(
-                paginate_modules(curr_page - 1, HELPABLE, "help")
-            ),
-            disable_web_page_preview=True,
-        )
+        nav_markup = InlineKeyboardMarkup(paginate_modules(curr_page - 1, HELPABLE, "help"))
+        edited = await query.message.edit(text=top_text, reply_markup=nav_markup, disable_web_page_preview=True)
+        await colorize_message(edited, nav_markup, BOT_TOKEN, "help")
 
     elif next_match:
         next_page = int(next_match.group(1))
-        await query.message.edit(
-            text=top_text,
-            reply_markup=InlineKeyboardMarkup(
-                paginate_modules(next_page + 1, HELPABLE, "help")
-            ),
-            disable_web_page_preview=True,
-        )
+        nav_markup = InlineKeyboardMarkup(paginate_modules(next_page + 1, HELPABLE, "help"))
+        edited = await query.message.edit(text=top_text, reply_markup=nav_markup, disable_web_page_preview=True)
+        await colorize_message(edited, nav_markup, BOT_TOKEN, "help")
 
     elif back_match:
-        await query.message.edit(
-            text=top_text,
-            reply_markup=InlineKeyboardMarkup(
-                paginate_modules(0, HELPABLE, "help")
-            ),
-            disable_web_page_preview=True,
-        )
+        nav_markup = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
+        edited = await query.message.edit(text=top_text, reply_markup=nav_markup, disable_web_page_preview=True)
+        await colorize_message(edited, nav_markup, BOT_TOKEN, "help")
 
     elif create_match:
         text, keyboard = await help_parser(query)
