@@ -21,6 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+import logging
 from asyncio import gather, sleep
 
 from pyrogram import enums, filters
@@ -40,6 +41,8 @@ from wbb import (
 from wbb.core.decorators.errors import capture_err
 from wbb.utils.dbfunctions import add_chatbot, check_chatbot, rm_chatbot
 from wbb.utils.filter_groups import chatbot_group
+
+logger = logging.getLogger(__name__)
 
 __MODULE__ = "ChatBot"
 __HELP__ = """
@@ -69,9 +72,6 @@ async def chat_bot_toggle(message: Message, is_userbot: bool):
         await eor(message, text="**Usage:**\n/chatbot [ENABLE|DISABLE]")
 
 
-# Enabled | Disable Chatbot
-
-
 @app.on_message(filters.command("chatbot"))
 @capture_err
 async def chatbot_status(_, message: Message):
@@ -82,17 +82,38 @@ async def chatbot_status(_, message: Message):
 
 async def lunaQuery(query: str, user_id: int):
     luna = await arq.luna(query, user_id)
-    return luna.result
+    result = getattr(luna, "result", None)
+    if not isinstance(result, str) or not result.strip():
+        logger.error("ARQ Luna returned an empty or invalid result: %r", result)
+        return None
+    if result.strip().lower() == "something went wrong.":
+        logger.error("ARQ Luna returned its generic error response for user_id=%s", user_id)
+        return None
+    return result
 
 
 async def type_and_send(message: Message):
     chat_id = message.chat.id
     user_id = message.from_user.id if message.from_user else 0
-    query = message.text.strip()
-    await message._client.send_chat_action(chat_id, enums.ChatAction.TYPING)
-    response, _ = await gather(lunaQuery(query, user_id), sleep(3))
-    await message.reply_text(response)
-    await message._client.send_chat_action(chat_id, enums.ChatAction.CANCEL)
+    query = (message.text or "").strip()
+    if not query:
+        return
+    client = message._client
+    try:
+        await client.send_chat_action(chat_id, enums.ChatAction.TYPING)
+        response, _ = await gather(lunaQuery(query, user_id), sleep(3))
+        if response is None:
+            await message.reply_text("Sorry, the AI service couldn't generate a reply right now. Please try again later.")
+        else:
+            await message.reply_text(response)
+    except Exception:
+        logger.exception("Foxy chatbot Luna request failed (chat_id=%s)", chat_id)
+        await message.reply_text("Sorry, the AI service is temporarily unavailable. Please try again later.")
+    finally:
+        try:
+            await client.send_chat_action(chat_id, enums.ChatAction.CANCEL)
+        except Exception:
+            logger.debug("Could not cancel chatbot typing action", exc_info=True)
 
 
 @app.on_message(
@@ -115,9 +136,6 @@ async def chatbot_talk(_, message: Message):
     if message.reply_to_message.from_user.id != BOT_ID:
         return
     await type_and_send(message)
-
-
-# FOR USERBOT
 
 
 @app2.on_message(
