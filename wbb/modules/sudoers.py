@@ -103,13 +103,17 @@ DISK: {disk}%
 @capture_err
 async def ban_globally(_, message):
     user_id, reason = await extract_user_and_reason(message)
-    user = await app.get_users(user_id)
     from_user = message.from_user
 
     if not user_id:
-        return await message.reply_text("I can't find that user.")
+        return await message.reply_text("I can't find that user. Reply to a user or provide their ID.")
     if not reason:
         return await message.reply("No reason provided.")
+
+    try:
+        user = await app.get_users(user_id)
+    except Exception:
+        return await message.reply_text("I couldn't resolve that user. Check the user ID or username.")
 
     if user_id in [from_user.id, BOT_ID] or user_id in SUDOERS:
         return await message.reply_text("I can't ban that user.")
