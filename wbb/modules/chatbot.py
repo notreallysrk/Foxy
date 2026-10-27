@@ -18,6 +18,7 @@ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 """
 
+import asyncio
 import logging
 import os
 from collections import OrderedDict
@@ -154,7 +155,8 @@ async def gemini_reply(message: Message):
     }
 
     try:
-        timeout = ClientTimeout(total=30)
+        # Give Gemini more time to respond while keeping connection setup bounded.
+        timeout = ClientTimeout(total=60, connect=15, sock_read=50)
 
         async with ClientSession(timeout=timeout) as session:
             async with session.post(
@@ -241,8 +243,17 @@ async def gemini_reply(message: Message):
 
         return answer
 
+    except asyncio.TimeoutError:
+        LOGGER.warning(
+            "Gemini request timed out after 60 seconds (model=%s).",
+            GEMINI_MODEL,
+        )
+        return (
+            "Aww, reply aane mein zyada time lag gaya. "
+            "Ek baar phir try karo na. 💗"
+        )
     except Exception:
-        LOGGER.exception("Gemini request failed.")
+        LOGGER.exception("Gemini request failed (model=%s).", GEMINI_MODEL)
         return (
             "Aww, connection mein problem aa gayi. "
             "Thodi der mein phir baat karte hain. 💗"
