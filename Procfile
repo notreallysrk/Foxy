@@ -1,1 +1,1 @@
-worker: python check_arq.py
+worker: python -m wbb
