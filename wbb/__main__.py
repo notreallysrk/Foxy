@@ -33,7 +33,6 @@ from uvloop import install
 
 from wbb import (
     BOT_NAME,
-    BOT_TOKEN,
     BOT_USERNAME,
     LOG_GROUP_ID,
     USERBOT_NAME,
@@ -42,81 +41,12 @@ from wbb import (
     log,
 )
 from wbb.core.keyboard import ikb
-import aiohttp
-import logging
 from wbb.modules import ALL_MODULES
 from wbb.modules.sudoers import bot_sys_stats
 from wbb.utils import paginate_modules
 from wbb.utils.constants import MARKDOWN
 from wbb.utils.dbfunctions import clean_restart_stage, get_rules
 from wbb.utils.functions import extract_text_and_keyb
-
-"""Native Telegram Bot API coloured keyboards, sent in a single request."""
-
-
-def styled_keyboard(markup, mode):
-    rows = []
-    for row in markup.inline_keyboard:
-        output = []
-        for button in row:
-            item = {"text": button.text}
-            for field in ("url", "callback_data", "switch_inline_query", "switch_inline_query_current_chat"):
-                value = getattr(button, field, None)
-                if value is not None:
-                    item[field] = value
-                    break
-            else:
-                return None  # Avoid altering buttons with unsupported actions.
-            if mode == "start":
-                name = button.text.lower()
-                item["style"] = ("success" if "add me" in name else "danger" if "repo" in name else "primary")
-            elif mode == "help":
-                name = button.text.strip().lower()
-                callback = item.get("callback_data", "")
-                if "prev(" in callback or name in ("❮", "previous"):
-                    item["style"] = "primary"
-                elif "next(" in callback or name in ("❯", "next"):
-                    item["style"] = "success"
-                elif name == "back" or callback == "help_back":
-                    item["style"] = "danger"
-            output.append(item)
-        rows.append(output)
-    return {"inline_keyboard": rows}
-
-
-async def telegram_styled(method, *, markup, mode, **fields):
-    """Send/edit styled keyboards in the original Bot API request (no grey flash)."""
-    payload = dict(fields)
-    payload["reply_markup"] = styled_keyboard(markup, mode)
-    if payload["reply_markup"] is None:
-        raise ValueError("Unsupported keyboard button action")
-    payload.setdefault("parse_mode", "Markdown")
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/{method}",
-            json=payload, timeout=aiohttp.ClientTimeout(total=20),
-        ) as response:
-            result = await response.json(content_type=None)
-    if not result.get("ok"):
-        raise RuntimeError(f"Telegram {method}: {result.get('description', 'unknown error')}")
-    return result["result"]
-
-
-async def send_styled_reply(message, text, markup, mode, *, no_preview=False):
-    return await telegram_styled(
-        "sendMessage", chat_id=message.chat.id, text=text,
-        reply_to_message_id=message.id, allow_sending_without_reply=True,
-        disable_web_page_preview=no_preview, markup=markup, mode=mode,
-    )
-
-
-async def edit_styled(message, text, markup, mode, *, no_preview=True):
-    return await telegram_styled(
-        "editMessageText", chat_id=message.chat.id, message_id=message.id,
-        text=text, disable_web_page_preview=no_preview,
-        markup=markup, mode=mode,
-    )
-
 
 loop = asyncio.get_event_loop()
 
@@ -312,16 +242,24 @@ async def start(_, message):
                     reply_markup=FED_MARKUP,
                     disable_web_page_preview=True,
                 )
-            await send_styled_reply(
-                message, text,
-                InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="help_back")]]),
-                "help", no_preview=True,
+            await message.reply(
+                text,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("back", callback_data="help_back")]]
+                ),
+                disable_web_page_preview=True,
             )
         elif name == "help":
             text, keyb = await help_parser(message.from_user.first_name)
-            await send_styled_reply(message, text, keyb, "help")
+            await message.reply(
+                text,
+                reply_markup=keyb,
+            )
     else:
-        await send_styled_reply(message, home_text_pm, home_keyboard_pm, "start")
+        await message.reply(
+            home_text_pm,
+            reply_markup=home_keyboard_pm,
+        )
     return
 
 
@@ -366,12 +304,18 @@ async def help_command(_, message):
                 text, help_keyboard = await help_parser(
                     message.from_user.first_name
                 )
-                await send_styled_reply(message, text, help_keyboard, "help", no_preview=True)
+                await message.reply(
+                    text,
+                    reply_markup=help_keyboard,
+                    disable_web_page_preview=True,
+                )
         else:
             text, help_keyboard = await help_parser(
                 message.from_user.first_name
             )
-            await send_styled_reply(message, text, help_keyboard, "help", no_preview=True)
+            await message.reply(
+                text, reply_markup=help_keyboard, disable_web_page_preview=True
+            )
     return
 
 
@@ -441,31 +385,56 @@ General command are:
                 reply_markup=FED_MARKUP,
                 disable_web_page_preview=True,
             )
-        await edit_styled(
-            query.message, text,
-            InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="help_back")]]),
-            "help",
+        await query.message.edit(
+            text=text,
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("back", callback_data="help_back")]]
+            ),
+            disable_web_page_preview=True,
         )
     elif home_match:
-        await telegram_styled("sendMessage", chat_id=query.from_user.id, text=home_text_pm, markup=home_keyboard_pm, mode="start")
+        await app.send_message(
+            query.from_user.id,
+            text=home_text_pm,
+            reply_markup=home_keyboard_pm,
+        )
         await query.message.delete()
     elif prev_match:
         curr_page = int(prev_match.group(1))
-        nav_markup = InlineKeyboardMarkup(paginate_modules(curr_page - 1, HELPABLE, "help"))
-        await edit_styled(query.message, top_text, nav_markup, "help")
+        await query.message.edit(
+            text=top_text,
+            reply_markup=InlineKeyboardMarkup(
+                paginate_modules(curr_page - 1, HELPABLE, "help")
+            ),
+            disable_web_page_preview=True,
+        )
 
     elif next_match:
         next_page = int(next_match.group(1))
-        nav_markup = InlineKeyboardMarkup(paginate_modules(next_page + 1, HELPABLE, "help"))
-        await edit_styled(query.message, top_text, nav_markup, "help")
+        await query.message.edit(
+            text=top_text,
+            reply_markup=InlineKeyboardMarkup(
+                paginate_modules(next_page + 1, HELPABLE, "help")
+            ),
+            disable_web_page_preview=True,
+        )
 
     elif back_match:
-        nav_markup = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
-        await edit_styled(query.message, top_text, nav_markup, "help")
+        await query.message.edit(
+            text=top_text,
+            reply_markup=InlineKeyboardMarkup(
+                paginate_modules(0, HELPABLE, "help")
+            ),
+            disable_web_page_preview=True,
+        )
 
     elif create_match:
         text, keyboard = await help_parser(query)
-        await edit_styled(query.message, text, keyboard, "help")
+        await query.message.edit(
+            text=text,
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
 
     return await client.answer_callback_query(query.id)
 
