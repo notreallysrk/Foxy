@@ -118,55 +118,60 @@ home_keyboard_pm = InlineKeyboardMarkup(
     [
         [
             InlineKeyboardButton(
-                text="Commands ❓", callback_data="bot_commands"
-            ),
-            InlineKeyboardButton(
-                text="Repo 🛠",
-                url="https://github.com/thehamkercat/WilliamButcherBot",
+                text="Cᴏᴍᴍᴀɴᴅs",
+                callback_data="bot_commands",
             ),
         ],
         [
             InlineKeyboardButton(
-                text="System Stats 🖥",
-                callback_data="stats_callback",
+                text="Sᴜᴘᴘᴏʀᴛ",
+                url="https://t.me/FoxryChat",
             ),
             InlineKeyboardButton(
-                text="Support 👨", url="http://t.me/WBBSupport"
+                text="Cʜᴀɴɴᴇʟ",
+                url="https://t.me/FoxryHQ",
             ),
         ],
         [
             InlineKeyboardButton(
-                text="Add Me To Your Group 🎉",
-                url=f"http://t.me/{BOT_USERNAME}?startgroup=new",
-            )
+                text="˹Kɪᴅɴᴀᴘ Mᴇ Bᴀʙᴇs˼",
+                url=f"https://t.me/{BOT_USERNAME}?startgroup=new",
+            ),
         ],
     ]
 )
-
 home_text_pm = (
-    f"Hey there! My name is {BOT_NAME}. I can manage your "
-    + "group with lots of useful features, feel free to "
-    + "add me to your group."
+    f"✦ <b>Hᴇʏ, Wᴇʟᴄᴏᴍᴇ Tᴏ {BOT_NAME}!</b>\n\n"
+    "➥ I'ᴍ ᴀ Pᴏᴡᴇʀғᴜʟ Aɴᴅ Aᴅᴠᴀɴᴄᴇᴅ "
+    "Gʀᴏᴜᴘ Mᴀɴᴀɢᴇᴍᴇɴᴛ Bᴏᴛ, Dᴇsɪɢɴᴇᴅ "
+    "Tᴏ Kᴇᴇᴘ Yᴏᴜʀ Gʀᴏᴜᴘ Sᴀғᴇ, "
+    "Aᴄᴛɪᴠᴇ Aɴᴅ Wᴇʟʟ-Mᴀɴᴀɢᴇᴅ.\n\n"
+    "✧ <b>Wʜᴀᴛ Cᴀɴ I Dᴏ?</b>\n"
+    "├ ✦ Aᴅᴠᴀɴᴄᴇᴅ Mᴏᴅᴇʀᴀᴛɪᴏɴ\n"
+    "├ ✦ Aɴᴛɪ-Sᴘᴀᴍ & Pʀᴏᴛᴇᴄᴛɪᴏɴ\n"
+    "├ ✦ Sᴍᴀʀᴛ Gʀᴏᴜᴘ Mᴀɴᴀɢᴇᴍᴇɴᴛ\n"
+    "└ ✦ Pᴏᴡᴇʀғᴜʟ Aᴅᴍɪɴ Tᴏᴏʟs\n\n"
+    "➥ <b>Aᴅᴅ Mᴇ Tᴏ Yᴏᴜʀ Gʀᴏᴜᴘ</b> "
+    "Aɴᴅ Lᴇᴛ Mᴇ Hᴀɴᴅʟᴇ Tʜᴇ Rᴇsᴛ! ♡"
 )
 
 keyboard = InlineKeyboardMarkup(
     [
         [
             InlineKeyboardButton(
-                text="Help ❓",
-                url=f"t.me/{BOT_USERNAME}?start=help",
-            ),
-            InlineKeyboardButton(
-                text="Repo 🛠",
-                url="https://github.com/thehamkercat/WilliamButcherBot",
+                text="Hᴇʟᴘ",
+                url=f"https://t.me/{BOT_USERNAME}?start=help",
             ),
         ],
         [
             InlineKeyboardButton(
-                text="System Stats 💻",
-                callback_data="stats_callback",
+                text="Sᴜᴘᴘᴏʀᴛ",
+                url="https://t.me/FoxryChat",
             ),
-            InlineKeyboardButton(text="Support 👨", url="t.me/WBBSupport"),
+            InlineKeyboardButton(
+                text="Cʜᴀɴɴᴇʟ",
+                url="https://t.me/FoxryHQ",
+            ),
         ],
     ]
 )
@@ -245,7 +250,7 @@ async def start(_, message):
             await message.reply(
                 text,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("back", callback_data="help_back")]]
+                    [[InlineKeyboardButton("Bᴀᴄᴋ", callback_data="help_back")]]
                 ),
                 disable_web_page_preview=True,
             )
