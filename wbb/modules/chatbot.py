@@ -108,8 +108,12 @@ IMPORTANT CONVERSATION RULES:
 # Memory is separate for each chat and user.
 _HISTORY = OrderedDict()
 _HISTORY_LIMIT = 500
-_MAX_HISTORY_MESSAGES = 10
-_MAX_OUTPUT_TOKENS = 180
+_MAX_HISTORY_MESSAGES = 6
+_MAX_OUTPUT_TOKENS = 120
+
+# Reuse the HTTP connection between messages to avoid a new TLS handshake
+# for every Gemini request.
+_GEMINI_SESSION = None
 
 
 def _history_key(message: Message):
@@ -155,51 +159,52 @@ async def gemini_reply(message: Message):
     }
 
     try:
-        # Give Gemini more time to respond while keeping connection setup bounded.
-        timeout = ClientTimeout(total=60, connect=15, sock_read=50)
+        global _GEMINI_SESSION
+        if _GEMINI_SESSION is None or _GEMINI_SESSION.closed:
+            timeout = ClientTimeout(total=45, connect=10, sock_read=35)
+            _GEMINI_SESSION = ClientSession(timeout=timeout)
 
-        async with ClientSession(timeout=timeout) as session:
-            async with session.post(
-                GEMINI_API_URL,
-                params={"key": GEMINI_API_KEY},
-                json=payload,
-            ) as response:
-                data = await response.json(content_type=None)
+        async with _GEMINI_SESSION.post(
+            GEMINI_API_URL,
+            params={"key": GEMINI_API_KEY},
+            json=payload,
+        ) as response:
+            data = await response.json(content_type=None)
 
-                if response.status != 200:
-                    # Do not log the API key or request URL.
-                    api_error = data.get("error", {})
-                    error_message = api_error.get(
-                        "message",
-                        "No error details provided",
-                    )
+            if response.status != 200:
+                # Do not log the API key or request URL.
+                api_error = data.get("error", {})
+                error_message = api_error.get(
+                    "message",
+                    "No error details provided",
+                )
 
-                    LOGGER.error(
-                        "Gemini API returned HTTP %s: %s",
-                        response.status,
-                        error_message[:300],
-                    )
+                LOGGER.error(
+                    "Gemini API returned HTTP %s: %s",
+                    response.status,
+                    error_message[:300],
+                )
 
-                    if response.status == 429:
-                        return (
-                            "Aww, thoda busy hoon abhi! 🥹 "
-                            "Ek minute baad try karo. 💗"
-                        )
-
-                    if response.status == 404:
-                        LOGGER.error(
-                            "Gemini model/endpoint not found. "
-                            "Check GEMINI_MODEL in Heroku Config Vars."
-                        )
-                        return (
-                            "Meri AI setting mein kuch problem hai. "
-                            "Owner ko model setting check karni hogi. 🦊"
-                        )
-
+                if response.status == 429:
                     return (
-                        "Aww, meri AI abhi reply nahi kar paa rahi. "
-                        "Thodi der baad try karo. 💗"
+                        "Aww, thoda busy hoon abhi! 🥹 "
+                        "Ek minute baad try karo. 💗"
                     )
+
+                if response.status == 404:
+                    LOGGER.error(
+                        "Gemini model/endpoint not found. "
+                        "Check GEMINI_MODEL in Heroku Config Vars."
+                    )
+                    return (
+                        "Meri AI setting mein kuch problem hai. "
+                        "Owner ko model setting check karni hogi. 🦊"
+                    )
+
+                return (
+                    "Aww, meri AI abhi reply nahi kar paa rahi. "
+                    "Thodi der baad try karo. 💗"
+                )
 
         candidates = data.get("candidates", [])
 
@@ -245,7 +250,7 @@ async def gemini_reply(message: Message):
 
     except asyncio.TimeoutError:
         LOGGER.warning(
-            "Gemini request timed out after 60 seconds (model=%s).",
+            "Gemini request timed out after 45 seconds (model=%s).",
             GEMINI_MODEL,
         )
         return (
