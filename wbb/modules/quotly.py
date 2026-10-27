@@ -21,8 +21,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+
+import logging
 from io import BytesIO
-from traceback import format_exc
 
 from pyrogram import filters
 from pyrogram.types import Message
@@ -31,36 +32,62 @@ from wbb import SUDOERS, USERBOT_PREFIX, app, app2, arq
 from wbb.core.decorators.errors import capture_err
 
 __MODULE__ = "Quotly"
+
+LOGGER = logging.getLogger(__name__)
+
 __HELP__ = """
 /q - To quote a message.
 /q [INTEGER] - To quote more than 1 messages.
-/q r - to quote a message with it's reply
+/q r - To quote a message with its reply.
 
-Use .q to quote using userbot
+Use .q to quote using userbot.
 """
 
 
 async def quotify(messages: list):
+    """Convert messages into a Quotly sticker."""
     response = await arq.quotly(messages)
+
     if not response.ok:
-        return [False, response.result]
+        LOGGER.error("Quotly API returned an error: %s", response.result)
+        return [
+            False,
+            response.result or "Quotly service could not create the quote.",
+        ]
+
     sticker = response.result
-    sticker = BytesIO(sticker)
-    sticker.name = "sticker.webp"
-    return [True, sticker]
+
+    if not isinstance(sticker, (bytes, bytearray)) or not sticker:
+        LOGGER.error(
+            "Quotly API returned an invalid sticker payload: %s",
+            type(sticker).__name__,
+        )
+        return [
+            False,
+            "Quotly service returned an invalid sticker. Please try again later.",
+        ]
+
+    sticker_file = BytesIO(sticker)
+    sticker_file.name = "sticker.webp"
+
+    return [True, sticker_file]
 
 
 def getArg(message: Message) -> str:
-    arg = message.text.strip().split(None, 1)[1].strip()
-    return arg
+    """Get the command argument safely."""
+    parts = (message.text or "").strip().split(None, 1)
+
+    if len(parts) < 2:
+        return ""
+
+    return parts[1].strip()
 
 
 def isArgInt(message: Message) -> list:
-    count = getArg(message)
+    """Check whether the command argument is an integer."""
     try:
-        count = int(count)
-        return [True, count]
-    except ValueError:
+        return [True, int(getArg(message))]
+    except (ValueError, TypeError):
         return [False, 0]
 
 
@@ -73,72 +100,118 @@ def isArgInt(message: Message) -> list:
 @app.on_message(filters.command("q") & ~filters.private)
 @capture_err
 async def quotly_func(client, message: Message):
-    if not message.reply_to_message:
-        return await message.reply_text("Reply to a message to quote it.")
-    if not message.reply_to_message.text:
+    """Create a quote sticker from a replied-to message."""
+
+    target = message.reply_to_message
+
+    if not target:
         return await message.reply_text(
-            "Replied message has no text, can't quote it."
+            "Reply to a message to quote it."
         )
-    m = await message.reply_text("Quoting Messages")
-    if len(message.command) < 2:
-        messages = [message.reply_to_message]
 
-    elif len(message.command) == 2:
-        arg = isArgInt(message)
-        if arg[0]:
-            if arg[1] < 2 or arg[1] > 10:
-                return await m.edit("Argument must be between 2-10.")
+    target_text = target.text or target.caption
 
-            count = arg[1]
+    if not target_text:
+        return await message.reply_text(
+            "Replied message has no text or caption, so it can't be quoted."
+        )
 
-            # Fetching 5 extra messages so that we can ignore media
-            # messages and still end up with correct offset
-            messages = [
-                i
-                for i in await client.get_messages(
+    status_message = await message.reply_text("Quoting Messages")
+
+    try:
+        if len(message.command) < 2:
+            messages = [target]
+
+        elif len(message.command) == 2:
+            argument = isArgInt(message)
+
+            if argument[0]:
+                count = argument[1]
+
+                if count < 2 or count > 10:
+                    return await status_message.edit(
+                        "Argument must be between 2-10."
+                    )
+
+                # Fetch extra messages so media messages can be skipped.
+                fetched_messages = await client.get_messages(
                     message.chat.id,
-                    range(
-                        message.reply_to_message.id,
-                        message.reply_to_message.id + (count + 5),
-                    ),
+                    range(target.id, target.id + count + 5),
                     replies=0,
                 )
-                if not i.empty and not i.media
-            ]
-            messages = messages[:count]
-        else:
-            if getArg(message) != "r":
-                return await m.edit(
-                    "Incorrect Argument, Pass **'r'** or **'INT'**, **EX:** __/q 2__"
-                )
-            reply_message = await client.get_messages(
-                message.chat.id,
-                message.reply_to_message.id,
-                replies=1,
-            )
-            messages = [reply_message]
-    else:
-        return await m.edit(
-            "Incorrect argument, check quotly module in help section."
-        )
-    try:
-        #if not message:
-        #    return await m.edit("Something went wrong.")
 
-        sticker = await quotify(messages)
-        if not sticker[0]:
-            await message.reply_text(sticker[1])
-            return await m.delete()
-        sticker = sticker[1]
-        await message.reply_sticker(sticker)
-        await m.delete()
-        sticker.close()
-    except Exception as e:
-        await m.edit(
-            "Something went wrong while quoting messages,"
-            + " This error usually happens when there's a "
-            + " message containing something other than text,"
-            + " or one of the messages in-between are deleted."
+                messages = [
+                    item
+                    for item in fetched_messages
+                    if not item.empty
+                    and (item.text or item.caption)
+                ][:count]
+
+                if not messages:
+                    return await status_message.edit(
+                        "No suitable text messages were found to quote."
+                    )
+
+            else:
+                if getArg(message).lower() != "r":
+                    return await status_message.edit(
+                        "Incorrect argument. Use **/q**, **/q 2**, "
+                        "or **/q r** while replying to a message."
+                    )
+
+                reply_message = await client.get_messages(
+                    message.chat.id,
+                    target.id,
+                    replies=1,
+                )
+
+                if not reply_message or reply_message.empty:
+                    return await status_message.edit(
+                        "Couldn't find the replied message to quote."
+                    )
+
+                if not (reply_message.text or reply_message.caption):
+                    return await status_message.edit(
+                        "The replied message has no text or caption."
+                    )
+
+                messages = [reply_message]
+
+        else:
+            return await status_message.edit(
+                "Incorrect argument. Check the Quotly command in help."
+            )
+
+        sticker_result = await quotify(messages)
+
+        if not sticker_result[0]:
+            return await status_message.edit(
+                f"Couldn't create quote: {sticker_result[1]}"
+            )
+
+        sticker_file = sticker_result[1]
+
+        try:
+            await message.reply_sticker(sticker_file)
+        finally:
+            sticker_file.close()
+
+        await status_message.delete()
+
+    except Exception:
+        LOGGER.exception(
+            "Quotly failed (chat_id=%s, command=%r, target_message_id=%s)",
+            message.chat.id,
+            message.text or message.caption,
+            target.id if target else None,
         )
-        e = format_exc()
-        print(e)
+
+        try:
+            await status_message.edit(
+                "Quote nahi ban paaya. Please dobara try karo. "
+                "Agar issue repeat ho, owner logs check kare."
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to edit the Quotly status message."
+            )
