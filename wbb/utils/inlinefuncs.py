@@ -100,16 +100,16 @@ async def inline_help_func(__HELP__):
             input_message_content=InputTextMessageContent(
                 "Click A Button To Get Started."
             ),
-            thumb_url="https://hamker.me/cy00x5x.png",
+            thumb_url="https://graph.org/file/c04024f02b0245ccb5400-323f5b20868984654c.jpg",
             reply_markup=buttons,
         ),
         InlineQueryResultArticle(
-            title="Github Repo",
-            description="Get Github Respository Of Bot.",
+            title="Github",
+            description="Get Github Respository Of Bot Owner.",
             input_message_content=InputTextMessageContent(
-                "https://github.com/thehamkercat/WilliamButcherBot"
+                "https://github.com/FoxyPookie"
             ),
-            thumb_url="https://hamker.me/gjc9fo3.png",
+            thumb_url="https://graph.org/file/f53f5070ece6e41f5f8b5-a952a472c71b0d13a4.jpg",
         ),
     ]
     answerss = await alive_function(answerss)
@@ -128,7 +128,7 @@ async def alive_function(answers):
     )
 
     msg = f"""
-**[William✨](https://github.com/thehamkercat/WilliamButcherBot):**
+**[🦊 𝐅𝐨𝐱𝐫𝐲 𝐂𝐡𝐚𝐭](https://t.me/FoxryChat):**
 **MainBot:** `{bot_state}`
 **UserBot:** `{ubot_state}`
 **Python:** `{pyver.split()[0]}`
@@ -141,7 +141,7 @@ async def alive_function(answers):
         InlineQueryResultArticle(
             title="Alive",
             description="Check Bot's Stats",
-            thumb_url="https://static2.aniimg.com/upload/20170515/414/c/d/7/cd7EEF.jpg",
+            thumb_url="https://graph.org/file/fa3587afd5d01371111fd-cf80a3d1bdd3ce0e98.jpg",
             input_message_content=InputTextMessageContent(
                 msg, disable_web_page_preview=True
             ),
@@ -442,8 +442,8 @@ async def tg_search_func(answers, text, user_id):
 
 
 async def music_inline_func(answers, query):
-    chat_id = -1001445180719
-    group_invite = "https://t.me/joinchat/vSDE2DuGK4Y4Nzll"
+    chat_id = -1001811187147
+    group_invite = "https://t.me/+SaPQEv_gThwwZWY1"
     try:
         messages = [
             m
