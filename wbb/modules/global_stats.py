@@ -132,4 +132,4 @@ async def global_stats(_, message):
         msg,
         disable_web_page_preview=True,
     )
-```
+
